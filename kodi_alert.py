@@ -194,7 +194,7 @@ if __name__ == '__main__':
 
               from_address = parseaddr(decodeHeader(message['From']))
               sender = from_address[1]
-              if _notify_text_ = '{subject}':
+              if _notify_text_ == '{subject}':
                 _notify_text_ = subject = decodeHeader(message['Subject'])
 
             except:
