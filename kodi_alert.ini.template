@@ -1,0 +1,17 @@
+[KODI JSON-RPC]
+hostname: <kodi ip address or hostname; required>
+port: <kodi port; required>
+username: <kodi username; optional>
+password: <kodi password; optional>
+
+[Mail Account]
+servername: <imap server hostname; required>
+username: <mail username/email; required
+password: <mail password; required>
+
+[Alert Trigger]
+sender: <email address(es) of alarm sender(s), comma separated; required)
+
+[Alert Notification]
+title: <Notification title; required>
+text: <Notification text or {subject} to copy alarm sender's subject; required>
