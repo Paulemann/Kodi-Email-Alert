@@ -16,6 +16,19 @@ Since my kodi system goes into sleep mode when idle I am running the script on a
 
 I also added an option to execute a local command on receipt of a security cam email, e.g., as in my case, to start the conversion of the security cam's rtsp video stream into a sequence of jpeg files to feed the 'Security Cam Overlay' addon.
 
-For the curious people: The latter is done via
+For the curious people: The following command generates a snapshot jpeg file every 1/2 second (fps=2) from the rtsp input stream. 
 
-ffmpeg -nostdin -i rtsp://${security_cam_ip_address}:554/${stream} -f segment -segment_time 0.0001 -segment_format singlejpeg -segment_wrap 5 -vf fps=2 -vsync 0 ${snapshot_folder}/snapshot%d.jpg >/dev/null 2>&1"
+    ffmpeg -nostdin -i rtsp://${security_cam_ip_address}:554/${stream} -f segment -segment_time 0.0001 -segment_format singlejpeg -segment_wrap 5 -vf fps=2 -vsync 0 ${snapshot_folder}/snapshot%d.jpg >/dev/null 2>&1
+
+I let the output rotate over 5 files and then select the latest file via: 
+
+    snapshot = $(ls -t ${snapshot_folder}/snapshot* | head -1)
+
+If not copied directly the file can be sent to stdout:
+
+    echo "Content-Type: image/jpeg"
+    echo ""
+    cat ${snapshot}
+
+
+
