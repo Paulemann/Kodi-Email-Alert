@@ -34,6 +34,33 @@ def signal_handler(signum, frame):
 signal.signal(signal.SIGTERM, signal_handler)
 
 
+def is_email(a):
+  try:
+    t = a.split('@')[1].split('.')[1]
+  except:
+    return False
+
+  return True
+
+
+def is_hostname(h):
+  try:
+    t = h.split('.')[2]
+  except:
+    return False
+
+  return True
+
+
+def is_int(n):
+  try:
+    t = int(n)
+  except:
+    return False
+
+  return True
+
+
 def log(message, level='INFO'):
   if _log_enable_:
     if level == 'DEBUG':
@@ -54,12 +81,13 @@ def read_config():
   global _kodi_, _kodi_port_, _kodi_user_, _kodi_passwd_
   global _imap_server_, _imap_user_, _imap_passwd_
   global _alert_sender_, _notify_title_, _notify_text_
+  global _exec_local_
 
   if not os.path.exists('kodi_alert.ini'):
     log('Config file \'kodi_alert.ini\' not found.', level='ERROR')
     return False
 
-  log('Reading config from file \'kodi_alert.ini\' ...')
+  log('Reading configuration from file ...')
 
   try:
     # Read the config file
@@ -72,15 +100,30 @@ def read_config():
     _kodi_user_     = config.get('KODI JSON-RPC', 'username')
     _kodi_passwd_   = config.get('KODI JSON-RPC', 'password')
 
+    if not _kodi_ or not is_hostname(_kodi_) or not is_int(_kodi_port_):
+      log(' Wrong ot missing value(s) in configuration file.')
+      return False
+
     _imap_server_   = config.get('Mail Account', 'servername')
     _imap_user_     = config.get('Mail Account', 'username')
     _imap_passwd_   = config.get('Mail Account', 'password')
 
+    if not _imap_server_ or not _imap_user_ or not _imap_passwd_ or not is_hostname(_imap_server_):
+      log('Wrong ot missing value(s) in configuration file.')
+      return False
+
     #_alert_sender_  = config.get('Alert Trigger', 'sender')
     _alert_sender_  = [p.strip().replace('"', '').replace('\'', '') for p in config.get('Alert Trigger', 'sender').split(',')]
 
+    for sender in _alert_sender_:
+      if  not is_email(sender):
+        log('Wrong ot missing value(s) in configuration file.')
+        return False
+
     _notify_title_  = config.get('Alert Notification', 'title')
     _notify_text_   = config.get('Alert Notification', 'text')
+
+    _exec_local_    = config.get('Local', 'command')
 
   except:
     log('Could not process configuration file.', level='ERROR')
@@ -151,10 +194,14 @@ def kodi_request(method, params):
   return (data['result'] == 'OK')
 
 
-def kodi_alert(title, message):
-  if kodi_request('GUI.ShowNotification', '{{"title":"{}","message":"{}", "displaytime":2000}}'.format(title, message)):
-    log('Sent notification \'{}: {}\''.format(title, message))
-    kodi_request('Addons.ExecuteAddon', '{"addonid":"script.securitycam"}')
+def alert(title, message):
+
+  if title and message:
+    log('Sending notification \'{}: {}\' ...'.format(title, message))
+    kodi_request('GUI.ShowNotification', '{{"title":"{}","message":"{}", "displaytime":2000}}'.format(title, message))
+
+  log('Requsting addon execution ...')
+  kodi_request('Addons.ExecuteAddon', '{"addonid":"script.securitycam"}')
 
 
 #imaplib.Debug = 4
@@ -203,7 +250,13 @@ if __name__ == '__main__':
 
             if sender in _alert_sender_:
               log('New mail matches criteria for alert.')
-              kodi_alert(_notify_title_, _notify_text_)
+              alert(_notify_title_, _notify_text_)
+              if _exec_local_:
+                try:
+                  os.system(_exec_local_)
+                except:
+                  log('Could not execute local command \'{}\'.'.format(_exec_local_) , level='ERROR')
+                  pass
               mail.store(uid,'+FLAGS','\\Seen')
               #mail.store(uid,'+FLAGS','(\\Deleted)')
               #mail.expunge()

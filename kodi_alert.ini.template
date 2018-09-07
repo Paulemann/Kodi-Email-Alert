@@ -13,5 +13,8 @@ password: <mail password; required>
 sender: <email address(es) of alarm sender(s), comma separated; required)
 
 [Alert Notification]
-title: <Notification title; required>
-text: <Notification text or {subject} to copy alarm sender's subject; required>
+title: <Notification title; optional>
+text: <Notification text or {subject} to copy alarm sender's subject; optional>
+
+[Local]
+command: <Local script or command to be executed when alert mail has been received; optional>
