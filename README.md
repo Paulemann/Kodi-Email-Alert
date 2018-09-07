@@ -18,4 +18,4 @@ I also added an option to execute a local command on receipt of a security cam e
 
 For the curious people: The latter is done via
 
-ffmpeg -nostdin -i rtsp://{security cam ip address}:554/{stream} -f segment -segment_time 0.0001 -segment_format singlejpeg -segment_wrap 5 -vf fps=2 -vsync 0 {snapshot folder}/snapshot%d.jpg >/dev/null 2>&1"
+ffmpeg -nostdin -i rtsp://${security_cam_ip_address}:554/${stream} -f segment -segment_time 0.0001 -segment_format singlejpeg -segment_wrap 5 -vf fps=2 -vsync 0 ${snapshot_folder}/snapshot%d.jpg >/dev/null 2>&1"
