@@ -23,6 +23,8 @@ import signal
 _log_file_ = os.path.splitext(os.path.basename(__file__))[0] + '.log'
 _log_enable_ = False
 
+_config_file_ = 'kodi_alert.ini'
+
 
 class GracefulExit(Exception):
     pass
@@ -83,8 +85,8 @@ def read_config():
   global _alert_sender_, _notify_title_, _notify_text_
   global _exec_local_
 
-  if not os.path.exists('kodi_alert.ini'):
-    log('Config file \'kodi_alert.ini\' not found.', level='ERROR')
+  if not os.path.exists(_config_file_):
+    log('Could not find configuration file \'{}\'.'.format(_config_file_), level='ERROR')
     return False
 
   log('Reading configuration from file ...')
@@ -100,16 +102,16 @@ def read_config():
     _kodi_user_     = config.get('KODI JSON-RPC', 'username')
     _kodi_passwd_   = config.get('KODI JSON-RPC', 'password')
 
-    if not _kodi_ or not is_hostname(_kodi_) or not is_int(_kodi_port_):
-      log(' Wrong ot missing value(s) in configuration file.')
+    if not  is_hostname(_kodi_) or not is_int(_kodi_port_):
+      log('Wrong or missing value(s) in configuration file.')
       return False
 
     _imap_server_   = config.get('Mail Account', 'servername')
     _imap_user_     = config.get('Mail Account', 'username')
     _imap_passwd_   = config.get('Mail Account', 'password')
 
-    if not _imap_server_ or not _imap_user_ or not _imap_passwd_ or not is_hostname(_imap_server_):
-      log('Wrong ot missing value(s) in configuration file.')
+    if not is_hostname(_imap_server_) or not is_email(_imap_user_) or not _imap_passwd_:
+      log('Wrong or missing value(s) in configuration file.')
       return False
 
     #_alert_sender_  = config.get('Alert Trigger', 'sender')
@@ -117,7 +119,7 @@ def read_config():
 
     for sender in _alert_sender_:
       if  not is_email(sender):
-        log('Wrong ot missing value(s) in configuration file.')
+        log('Wrong or missing value(s) in configuration file.')
         return False
 
     _notify_title_  = config.get('Alert Notification', 'title')
@@ -128,6 +130,8 @@ def read_config():
   except:
     log('Could not process configuration file.', level='ERROR')
     return False
+
+  log('Configuration OK.')
 
   return True
 
@@ -222,7 +226,7 @@ if __name__ == '__main__':
     mail.login(_imap_user_, _imap_passwd_)
     mail.select('INBOX')
 
-    log('Logged in.')
+    log('Checking mail server ...')
 
     loop = True
     while loop:
@@ -239,8 +243,7 @@ if __name__ == '__main__':
               status, data = mail.fetch(uid, '(BODY.PEEK[HEADER])')
               message = email.message_from_string(data[0][1])
 
-              from_address = parseaddr(decodeHeader(message['From']))
-              sender = from_address[1]
+              sender = parseaddr(decodeHeader(message['From']))[1]
               if _notify_text_ == '{subject}':
                 _notify_text_ = subject = decodeHeader(message['Subject'])
 
