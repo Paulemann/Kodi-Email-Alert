@@ -230,6 +230,8 @@ def msg_is_alert(message):
 
   sender = parseaddr(decodeHeader(message['From']))[1]
 
+  log('Sender={}.'.format(sender), level='DEBUG')
+
   if sender in _alert_sender_:
     if _notify_text_ == '{subject}':
       _notify_text_ = decodeHeader(message['Subject'])
@@ -316,10 +318,6 @@ if __name__ == '__main__':
               mail.store(uid,'+FLAGS','\\Seen')
               #mail.store(uid,'+FLAGS','(\\Deleted)')
               #mail.expunge()
-
-          else:
-            mail.done()
-            mail.noop()
 
       except (KeyboardInterrupt, SystemExit, GracefulExit):
         loop = False
