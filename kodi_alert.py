@@ -12,6 +12,7 @@ import logging
 import ConfigParser
 import os
 import sys
+import socket
 
 from threading import *
 from email.header import decode_header
@@ -20,10 +21,12 @@ from email.utils import parseaddr
 import signal
 
 
+# global settings
 _log_file_ = os.path.splitext(os.path.basename(__file__))[0] + '.log'
 _log_enable_ = False
 
 _config_file_ = 'kodi_alert.ini'
+_addon_id_ = 'script.securitycam'
 
 
 class GracefulExit(Exception):
@@ -159,7 +162,7 @@ def idle(connection):
   connection.send("%s IDLE\r\n" % tag)
   response = connection.readline()
   if response != '+ idling\r\n':
-    raise Exception("IDLE timed out? Response was: %s" % response)
+    raise Exception("IDLE timed out? Response was: \'%s\'" % response)
   connection.loop = True
   while connection.loop:
     try:
@@ -198,14 +201,51 @@ def kodi_request(method, params):
   return (data['result'] == 'OK')
 
 
+def host_is_up(host, port):
+  try:
+    sock = socket.create_connection((host, port), timeout=3)
+  #except socket.timout:
+  #  return False
+  except:
+    return False
+
+  return True
+
+
 def alert(title, message):
+  if not host_is_up(_kodi_, _kodi_port_):
+    log('Host {} is down. Requests canceled.'.format(_kodi_))
+    return
 
   if title and message:
     log('Sending notification \'{}: {}\' ...'.format(title, message))
     kodi_request('GUI.ShowNotification', '{{"title":"{}","message":"{}", "displaytime":2000}}'.format(title, message))
 
-  log('Requsting addon execution ...')
-  kodi_request('Addons.ExecuteAddon', '{"addonid":"script.securitycam"}')
+  log('Requsting execution of addon \'{}\' ...'.format(_addon_id_))
+  kodi_request('Addons.ExecuteAddon', '{{"addonid":"{}"}}'.format(_addon_id_))
+
+
+def msg_is_alert(message):
+  global _notify_text_
+
+  sender = parseaddr(decodeHeader(message['From']))[1]
+
+  if sender in _alert_sender_:
+    if _notify_text_ == '{subject}':
+      _notify_text_ = decodeHeader(message['Subject'])
+
+    log('Mail has matching criteria: Sender={}.'.format(sender))
+    alert(_notify_title_, _notify_text_)
+    if _exec_local_:
+      try:
+        os.system(_exec_local_)
+      except:
+        log('Could not execute local command \'{}\'.'.format(_exec_local_) , level='ERROR')
+        pass
+
+    return True
+
+  return False
 
 
 #imaplib.Debug = 4
@@ -226,7 +266,33 @@ if __name__ == '__main__':
     mail.login(_imap_user_, _imap_passwd_)
     mail.select('INBOX')
 
-    log('Checking mail server ...')
+    #
+    # Unseen mails might be of interest in case new
+    # mails were received betwenn exit and restart:
+    #
+    # Cuurently, whole block is unused.
+    #
+    #log('Checking mail server ...')
+    #today = datetime.date.today().strftime("%d-%b-%Y")
+    #for each sender in _alert_sender_:
+    #  try:
+    #    status, data = conn.search(None, 'UNSEEN', 'FROM', sender, 'ON', today)
+    #  except:
+    #    continue
+    #  if status == 'OK':
+    #    if data[0]:
+    #      uid_list = data[0]
+    #      for uid in uid_list.split():
+    #        try:
+    #          status, data = mail.fetch(uid, '(BODY.PEEK[HEADER])')
+    #        except:
+    #          log('Failed to fetch mail data.', level='ERROR')
+    #          continue
+    #        message = email.message_from_string(data[0][1])
+    #        if msg_is_alert(message):
+    #          mail.store(uid,'+FLAGS','\\Seen')
+
+    log('Waiting for new mail ...')
 
     loop = True
     while loop:
@@ -241,25 +307,13 @@ if __name__ == '__main__':
 
             try:
               status, data = mail.fetch(uid, '(BODY.PEEK[HEADER])')
-              message = email.message_from_string(data[0][1])
-
-              sender = parseaddr(decodeHeader(message['From']))[1]
-              if _notify_text_ == '{subject}':
-                _notify_text_ = subject = decodeHeader(message['Subject'])
 
             except:
-              log('Something went wrong while fetching mail data.', level='ERROR')
+              log('Failed to fetch mail data.', level='ERROR')
               continue
 
-            if sender in _alert_sender_:
-              log('New mail matches criteria for alert.')
-              alert(_notify_title_, _notify_text_)
-              if _exec_local_:
-                try:
-                  os.system(_exec_local_)
-                except:
-                  log('Could not execute local command \'{}\'.'.format(_exec_local_) , level='ERROR')
-                  pass
+            message = email.message_from_string(data[0][1])
+            if msg_is_alert(message):
               mail.store(uid,'+FLAGS','\\Seen')
               #mail.store(uid,'+FLAGS','(\\Deleted)')
               #mail.expunge()
