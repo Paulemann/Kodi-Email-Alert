@@ -162,7 +162,7 @@ def idle(connection):
   connection.send("%s IDLE\r\n" % tag)
   response = connection.readline()
   if response != '+ idling\r\n':
-    raise Exception("IDLE timed out? Response was: \'%s\'" % response)
+    raise Exception("IDLE not handled? Response: \'%s\'" % response)
   connection.loop = True
   while connection.loop:
     try:
@@ -297,7 +297,6 @@ if __name__ == '__main__':
     loop = True
     while loop:
 
-      #mail.noop() # will keep connection up during inactivity period > 30 min ?
       try:
         for uid, msg in mail.idle():
 
@@ -318,14 +317,18 @@ if __name__ == '__main__':
               #mail.store(uid,'+FLAGS','(\\Deleted)')
               #mail.expunge()
 
+          else:
+            mail.done()
+            mail.noop()
+
       except (KeyboardInterrupt, SystemExit, GracefulExit):
         loop = False
-        log('Abort due to KeyboardInterrupt/SystemExit exception.', level='ERROR')
+        log('Abort requested by user or system.')
         break
 
       except Exception as e:
         loop = False
-        log('Abort due to exception: \'{}\''.format(e), level='ERROR')
+        log('Closing connection due to exception: \'{}\' ...'.format(e))
         break
 
   finally:
