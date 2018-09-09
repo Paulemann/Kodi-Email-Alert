@@ -99,7 +99,7 @@ def read_config():
     # Read the config file
     config = ConfigParser.ConfigParser()
 
-    config.read([os.path.abspath('kodi_alert.ini')])
+    config.read([os.path.abspath(_config_file_)])
 
     _kodi_          = config.get('KODI JSON-RPC', 'hostname')
     _kodi_port_     = config.get('KODI JSON-RPC', 'port')
@@ -139,35 +139,6 @@ def read_config():
   return True
 
 
-import re
-import quopri
-import base64
-
-pat2=re.compile(r'(([^=]*)=\?([^\?]*)\?([BbQq])\?([^\?]*)\?=([^=]*))',re.IGNORECASE)
-
-def decodeHeader(a):
-  data=pat2.findall(a)
-  line=[]
-  if data:
-    for g in data:
-      (raw,extra1,encoding,method,string,extra)=g
-      extra1=extra1.replace('\r','').replace('\n','').strip()
-      if len(extra1)>0:
-        line.append(extra1)
-      if method.lower()=='q':
-        string=quopri.decodestring(string)
-        string=string.replace("_"," ").strip()
-      if method.lower()=='b':
-        string=base64.b64decode(string)
-      line.append(string.decode(encoding,errors='ignore'))
-      extra=extra.replace('\r','').replace('\n','').strip()
-      if len(extra)>0:
-        line.append(extra)
-    return "".join(line)
-  else:
-    return a
-
-
 # to unescape xml entities
 #_parser = HTMLParser.HTMLParser()
 
@@ -198,13 +169,13 @@ def idle(connection):
     try:
       resp = connection._get_response()
       log('IDLE _get_response_(), Response: \'{}\''.format(resp.replace('\r\n', '')), level='DEBUG')
-      uid, message = resp.split()[1:]
+      uid, message = resp.split()[1:3]
       log('IDLE uid: {}, message: {}'.format(uid, message), level='DEBUG')
       yield uid, message
     except connection.abort:
       #log('IDLE connection.abort, Last Response: {}'.format(resp), level='DEBUG') # --> raise exception
       connection.done()
-      raise Exception("IDLE connection.abort, Last Response: \'%s\'" % response)
+      raise Exception("IDLE connection.abort, Last Response: \'%s\'" % resp)
     except (KeyboardInterrupt, SystemExit, GracefulExit):
       connection.done()
       raise
@@ -263,17 +234,37 @@ def alert(title, message):
 def msg_is_alert(message):
   global _notify_text_
 
-  address = parseaddr(decodeHeader(message['From']))
-  subject = decodeHeader(message['Subject'])
+  try:
+    from_name, from_address = parseaddr(message['From'])
+    name, encoding = decode_header(from_name)[0]
+    if encoding:
+      from_name = name.decode(encoding).encode('utf-8')
+    else:
+      from_name = name
+  except:
+    from_name = '>>> Undecodable <<<'
+    pass
 
-  log('From:    {}, {}'.format(address[0].encode('utf-8'), address[1]), level='DEBUG')
-  log('Subject: {}'.format(subject.encode('utf-8')), level='DEBUG')
+  try:
+    line = []
+    for subject, encoding in decode_header(message['Subject']):
+      if encoding:
+        line.append(subject.decode(encoding).encode('utf-8'))
+      else:
+        line.append(subject)
+    subject = ' '.join([l for l in line])
+  except:
+    subject = '>>> Could not decode subject. <<<'
+    pass
 
-  if address[1] in _alert_address_:
+  log('From:    {} <{}>'.format(from_name, from_address), level='DEBUG')
+  log('Subject: {}'.format(subject), level='DEBUG')
+
+  if from_address in _alert_address_:
     if _notify_text_ == '{subject}':
-      _notify_text_ = decodeHeader(message['Subject'])
+      _notify_text_ = subject
 
-    log('Mail has matching criteria: From Address={}.'.format(address[1]))
+    log('Mail has matching criteria: From Address={}.'.format(from_address))
     alert(_notify_title_, _notify_text_)
     if _exec_local_:
       try:
@@ -297,7 +288,7 @@ if __name__ == '__main__':
 
   parser = argparse.ArgumentParser(description='Sends a notification to a kodi host and triggers addon execution on email receipt')
 
-  parser.add_argument('-d', '--debug', dest='debug', action='store_true', help="Output debug messages (Default: False")
+  parser.add_argument('-d', '--debug', dest='debug', action='store_true', help="Output debug messages (Default: False)")
   parser.add_argument('-l', '--logfile', dest='log_file', default=None, help="Path to log file (Default: None=stdout)")
   parser.add_argument('-c', '--config', dest='config_file', default=os.path.splitext(os.path.basename(__file__))[0] + '.ini', help="Path to config file (Default: <Script Name>.ini)")
   parser.add_argument('-a', '--addonid', dest='addon_id', default='script.securitycam', help="Addon ID (Default: script.securitycam)")
