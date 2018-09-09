@@ -242,7 +242,7 @@ def msg_is_alert(message):
     else:
       from_name = name
   except:
-    from_name = '>>> Undecodable <<<'
+    from_name = ''
     pass
 
   try:
@@ -254,14 +254,19 @@ def msg_is_alert(message):
         line.append(subject)
     subject = ' '.join([l for l in line])
   except:
-    subject = '>>> Could not decode subject. <<<'
+    subject = ''
     pass
 
   log('From:    {} <{}>'.format(from_name, from_address), level='DEBUG')
   log('Subject: {}'.format(subject), level='DEBUG')
 
   if from_address in _alert_address_:
-    if _notify_text_ == '{subject}':
+    if _notify_title_ == '{from}':
+      if from_name:
+        _notify_title_ = from_name
+      else:
+       _notify_title_ = from_address
+    if _notify_text_ == '{subject}' and subject:
       _notify_text_ = subject
 
     log('Mail has matching criteria: From Address={}.'.format(from_address))
@@ -300,13 +305,13 @@ if __name__ == '__main__':
   _addon_id_ = args.addon_id
   _debug_ = args.debug
 
+  if _log_file_:
+    logging.basicConfig(filename=_log_file_, format='%(asctime)s [%(levelname)s]: %(message)s', datefmt='%m/%d/%Y %H:%M:%S', filemode='w', level=logging.DEBUG)
+
   log('Output Debug: {}'.format(_debug_), level='DEBUG')
   log('Log file:     {}'.format(_log_file_), level='DEBUG')
   log('Config file:  {}'.format(_config_file_), level='DEBUG')
   log('Addon ID:     {}'.format(_addon_id_), level='DEBUG')
-
-  if _log_file_:
-    logging.basicConfig(filename=_log_file_, format='%(asctime)s [%(levelname)s]: %(message)s', datefmt='%m/%d/%Y %H:%M:%S', filemode='w', level=logging.DEBUG)
 
   if not read_config():
     sys.exit(1)
