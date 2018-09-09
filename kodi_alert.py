@@ -202,8 +202,9 @@ def idle(connection):
       log('IDLE uid: {}, message: {}'.format(uid, message), level='DEBUG')
       yield uid, message
     except connection.abort:
-      log('IDLE connection.abort, Last Response: {}'.format(resp), level='DEBUG')
+      #log('IDLE connection.abort, Last Response: {}'.format(resp), level='DEBUG') # --> raise exception
       connection.done()
+      raise Exception("IDLE connection.abort, Last Response: \'%s\'" % response)
     except (KeyboardInterrupt, SystemExit, GracefulExit):
       connection.done()
       raise
@@ -262,16 +263,17 @@ def alert(title, message):
 def msg_is_alert(message):
   global _notify_text_
 
-  address = parseaddr(decodeHeader(message['From']))[1]
+  address = parseaddr(decodeHeader(message['From']))
+  subject = decodeHeader(message['Subject'])
 
-  log('From:    {}'.format(decodeHeader(message['From'])), level='DEBUG')
-  log('Subject: {}'.format(decodeHeader(message['Subject'])), level='DEBUG')
+  log('From:    {}, {}'.format(address[0].encode('utf-8'), address[1]), level='DEBUG')
+  log('Subject: {}'.format(subject.encode('utf-8')), level='DEBUG')
 
-  if address in _alert_address_:
+  if address[1] in _alert_address_:
     if _notify_text_ == '{subject}':
       _notify_text_ = decodeHeader(message['Subject'])
 
-    log('Mail has matching criteria: From Address={}.'.format(address))
+    log('Mail has matching criteria: From Address={}.'.format(address[1]))
     alert(_notify_title_, _notify_text_)
     if _exec_local_:
       try:
