@@ -10,7 +10,7 @@ username: <mail username/email; required
 password: <mail password; required>
 
 [Alert Trigger]
-sender: <email address(es) of alarm sender(s), comma separated; required)
+mailaddress: <email address(es) of alarm sender(s), comma separated; required)
 
 [Alert Notification]
 title: <Notification title; optional>

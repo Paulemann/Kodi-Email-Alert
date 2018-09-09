@@ -20,13 +20,13 @@ from email.utils import parseaddr
 
 import signal
 
-
 # global settings
-_log_file_ = os.path.splitext(os.path.basename(__file__))[0] + '.log'
-_log_enable_ = False
+#_config_file_ = os.path.splitext(os.path.basename(__file__))[0] + '.ini'
+#_log_file_ = None
+#_addon_id_ = 'script.securitycam'
+#_debug_ = True
 
-_config_file_ = 'kodi_alert.ini'
-_addon_id_ = 'script.securitycam'
+import argparse
 
 
 class GracefulExit(Exception):
@@ -39,7 +39,7 @@ def signal_handler(signum, frame):
 signal.signal(signal.SIGTERM, signal_handler)
 
 
-def is_email(a):
+def is_mailaddress(a):
   try:
     t = a.split('@')[1].split('.')[1]
   except:
@@ -67,25 +67,26 @@ def is_int(n):
 
 
 def log(message, level='INFO'):
-  if _log_enable_:
-    if level == 'DEBUG':
+  if _log_file_:
+    if level == 'DEBUG' and _debug_:
       logging.debug(message)
     if level == 'INFO':
       logging.info(message)
     if level == 'WARNING':
       logging.warning(message)
     if level == 'ERROR':
-       logging.error(message)
+      logging.error(message)
     if level == 'CRITICAL':
-     logging.crtitcal(message)
+      logging.crtitcal(message)
   else:
-    print '[' + level + ']: ' + message
+     if level != 'DEBUG' or _debug_:
+       print '[' + level + ']: ' + message
 
 
 def read_config():
   global _kodi_, _kodi_port_, _kodi_user_, _kodi_passwd_
   global _imap_server_, _imap_user_, _imap_passwd_
-  global _alert_sender_, _notify_title_, _notify_text_
+  global _alert_address_, _notify_title_, _notify_text_
   global _exec_local_
 
   if not os.path.exists(_config_file_):
@@ -106,23 +107,22 @@ def read_config():
     _kodi_passwd_   = config.get('KODI JSON-RPC', 'password')
 
     if not  is_hostname(_kodi_) or not is_int(_kodi_port_):
-      log('Wrong or missing value(s) in configuration file.')
+      log('Wrong or missing value(s) in configuration file (section: [KODI JSON-RPC]).')
       return False
 
     _imap_server_   = config.get('Mail Account', 'servername')
     _imap_user_     = config.get('Mail Account', 'username')
     _imap_passwd_   = config.get('Mail Account', 'password')
 
-    if not is_hostname(_imap_server_) or not is_email(_imap_user_) or not _imap_passwd_:
-      log('Wrong or missing value(s) in configuration file.')
+    if not is_hostname(_imap_server_) or not is_mailaddress(_imap_user_) or not _imap_passwd_:
+      log('Wrong or missing value(s) in configuration file (section [Mail Account]).')
       return False
 
-    #_alert_sender_  = config.get('Alert Trigger', 'sender')
-    _alert_sender_  = [p.strip().replace('"', '').replace('\'', '') for p in config.get('Alert Trigger', 'sender').split(',')]
+    _alert_address_  = [p.strip().replace('"', '').replace('\'', '') for p in config.get('Alert Trigger', 'mailaddress').split(',')]
 
-    for sender in _alert_sender_:
-      if  not is_email(sender):
-        log('Wrong or missing value(s) in configuration file.')
+    for address in _alert_address_:
+      if not is_mailaddress(address):
+        log('Wrong or missing value(s) in configuration file (section [Alert Trigger]).')
         return False
 
     _notify_title_  = config.get('Alert Notification', 'title')
@@ -139,21 +139,50 @@ def read_config():
   return True
 
 
+import re
+import quopri
+import base64
+
+pat2=re.compile(r'(([^=]*)=\?([^\?]*)\?([BbQq])\?([^\?]*)\?=([^=]*))',re.IGNORECASE)
+
+def decodeHeader(a):
+  data=pat2.findall(a)
+  line=[]
+  if data:
+    for g in data:
+      (raw,extra1,encoding,method,string,extra)=g
+      extra1=extra1.replace('\r','').replace('\n','').strip()
+      if len(extra1)>0:
+        line.append(extra1)
+      if method.lower()=='q':
+        string=quopri.decodestring(string)
+        string=string.replace("_"," ").strip()
+      if method.lower()=='b':
+        string=base64.b64decode(string)
+      line.append(string.decode(encoding,errors='ignore'))
+      extra=extra.replace('\r','').replace('\n','').strip()
+      if len(extra)>0:
+        line.append(extra)
+    return "".join(line)
+  else:
+    return a
+
+
 # to unescape xml entities
-_parser = HTMLParser.HTMLParser()
+#_parser = HTMLParser.HTMLParser()
 
-def decodeHeader(header):
-  values = []
-  if header and header.startswith('"=?'):
-    header = header.replace('"', '')
+#def decodeHeader(header):
+#  values = []
+#  if header and header.startswith('"=?'):
+#    header = header.replace('"', '')
 
-  for value, encoding in decode_header(header):
-    if encoding:
-       value = value.decode(encoding)
-    values.append( _parser.unescape(value))
+#  for value, encoding in decode_header(header):
+#    if encoding:
+#       value = value.decode(encoding)
+#    values.append( _parser.unescape(value))
 
-  decoded = ' '.join([v for v in values])
-  return decoded
+#  decoded = ' '.join([v for v in values])
+#  return decoded
 
 
 def idle(connection):
@@ -161,20 +190,25 @@ def idle(connection):
   tag = connection._new_tag()
   connection.send("%s IDLE\r\n" % tag)
   response = connection.readline()
+  log('IDLE readline(), Response: \'{}\''.format(response.replace('\r\n', '')), level='DEBUG')
   if response != '+ idling\r\n':
     raise Exception("IDLE not handled? Response: \'%s\'" % response)
   connection.loop = True
   while connection.loop:
     try:
       resp = connection._get_response()
+      log('IDLE _get_response_(), Response: \'{}\''.format(resp.replace('\r\n', '')), level='DEBUG')
       uid, message = resp.split()[1:]
+      log('IDLE uid: {}, message: {}'.format(uid, message), level='DEBUG')
       yield uid, message
     except connection.abort:
+      log('IDLE connection.abort, Last Response: {}'.format(resp), level='DEBUG')
       connection.done()
     except (KeyboardInterrupt, SystemExit, GracefulExit):
       connection.done()
       raise
-    except:
+    except Exception as e:
+      log('IDLE Exception: {}'.format(e), level='DEBUG')
       pass
 
 
@@ -228,15 +262,16 @@ def alert(title, message):
 def msg_is_alert(message):
   global _notify_text_
 
-  sender = parseaddr(decodeHeader(message['From']))[1]
+  address = parseaddr(decodeHeader(message['From']))[1]
 
-  log('Sender={}.'.format(sender), level='DEBUG')
+  log('From:    {}'.format(decodeHeader(message['From'])), level='DEBUG')
+  log('Subject: {}'.format(decodeHeader(message['Subject'])), level='DEBUG')
 
-  if sender in _alert_sender_:
+  if address in _alert_address_:
     if _notify_text_ == '{subject}':
       _notify_text_ = decodeHeader(message['Subject'])
 
-    log('Mail has matching criteria: Sender={}.'.format(sender))
+    log('Mail has matching criteria: From Address={}.'.format(address))
     alert(_notify_title_, _notify_text_)
     if _exec_local_:
       try:
@@ -256,7 +291,28 @@ imaplib.IMAP4.done = done
 
 
 if __name__ == '__main__':
-  if _log_enable_:
+  global _config_file_, _log_file_, _addon_id_, _debug_
+
+  parser = argparse.ArgumentParser(description='Sends a notification to a kodi host and triggers addon execution on email receipt')
+
+  parser.add_argument('-d', '--debug', dest='debug', action='store_true', help="Output debug messages (Default: False")
+  parser.add_argument('-l', '--logfile', dest='log_file', default=None, help="Path to log file (Default: None=stdout)")
+  parser.add_argument('-c', '--config', dest='config_file', default=os.path.splitext(os.path.basename(__file__))[0] + '.ini', help="Path to config file (Default: <Script Name>.ini)")
+  parser.add_argument('-a', '--addonid', dest='addon_id', default='script.securitycam', help="Addon ID (Default: script.securitycam)")
+
+  args = parser.parse_args()
+
+  _config_file_ = args.config_file
+  _log_file_ = args.log_file
+  _addon_id_ = args.addon_id
+  _debug_ = args.debug
+
+  log('Output Debug: {}'.format(_debug_), level='DEBUG')
+  log('Log file:     {}'.format(_log_file_), level='DEBUG')
+  log('Config file:  {}'.format(_config_file_), level='DEBUG')
+  log('Addon ID:     {}'.format(_addon_id_), level='DEBUG')
+
+  if _log_file_:
     logging.basicConfig(filename=_log_file_, format='%(asctime)s [%(levelname)s]: %(message)s', datefmt='%m/%d/%Y %H:%M:%S', filemode='w', level=logging.DEBUG)
 
   if not read_config():
@@ -269,16 +325,13 @@ if __name__ == '__main__':
     mail.select('INBOX')
 
     #
-    # Unseen mails might be of interest in case new
-    # mails were received betwenn exit and restart:
-    #
-    # Cuurently, whole block is unused.
+    # Currently, this init block is not required.
     #
     #log('Checking mail server ...')
     #today = datetime.date.today().strftime("%d-%b-%Y")
-    #for each sender in _alert_sender_:
+    #for each address in _alert_address_:
     #  try:
-    #    status, data = conn.search(None, 'UNSEEN', 'FROM', sender, 'ON', today)
+    #    status, data = conn.search(None, 'UNSEEN', 'FROM', address, 'ON', today)
     #  except:
     #    continue
     #  if status == 'OK':
@@ -326,7 +379,7 @@ if __name__ == '__main__':
 
       except Exception as e:
         loop = False
-        log('Closing connection due to exception: \'{}\' ...'.format(e))
+        log('Abort due to exception: \"{}\"'.format(e))
         break
 
   finally:
