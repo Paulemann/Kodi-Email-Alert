@@ -169,9 +169,11 @@ def idle(connection):
     try:
       resp = connection._get_response()
       log('IDLE _get_response_(), Response: \'{}\''.format(resp.replace('\r\n', '')), level='DEBUG')
-      uid, message = resp.split()[1:3]
-      log('IDLE uid: {}, message: {}'.format(uid, message), level='DEBUG')
-      yield uid, message
+      #num, message = resp.split()[1:]
+      num, message = resp.split()[1:3]
+      if message == 'EXISTS' or message == 'EXPUNGE':
+        log('IDLE sequence number: {}, message: {}'.format(num, message), level='DEBUG')
+        yield num, message
     except connection.abort:
       #log('IDLE connection.abort, Last Response: {}'.format(resp), level='DEBUG') # --> raise exception
       connection.done()
@@ -179,8 +181,9 @@ def idle(connection):
     except (KeyboardInterrupt, SystemExit, GracefulExit):
       connection.done()
       raise
-    except Exception as e:
-      log('IDLE Exception: {}'.format(e), level='DEBUG')
+    #except Exception as e:
+    #  log('IDLE Exception: {}'.format(e), level='DEBUG')
+    except:
       pass
 
 
@@ -232,10 +235,14 @@ def alert(title, message):
 
 
 def msg_is_alert(message):
-  global _notify_text_
+  global _notify_title_, _notify_text_
 
   try:
     from_name, from_address = parseaddr(message['From'])
+    if not from_address:
+      log('Could not parse sender\'s mail address from header.', level='DEBUG')
+      return False
+
     name, encoding = decode_header(from_name)[0]
     if encoding:
       from_name = name.decode(encoding).encode('utf-8')
@@ -257,7 +264,10 @@ def msg_is_alert(message):
     subject = ''
     pass
 
-  log('From:    {} <{}>'.format(from_name, from_address), level='DEBUG')
+  if not from_name:
+    log('From:    {}'.format(from_address), level='DEBUG')
+  else:
+    log('From:    {} <{}>'.format(from_name, from_address), level='DEBUG')
   log('Subject: {}'.format(subject), level='DEBUG')
 
   if from_address in _alert_address_:
@@ -281,6 +291,21 @@ def msg_is_alert(message):
     return True
 
   return False
+
+
+class TimerThread(Thread):
+  def __init__(self, connection):
+    Thread.__init__(self)
+    self.event = Event()
+    self.connection = connection
+
+  def run(self):
+    while not self.event.wait(15*60):
+      log('Force idle stop.', level='DEBUG')
+      self.connection.done()
+
+  def stop(self):
+    self.event.set()
 
 
 #imaplib.Debug = 4
@@ -318,6 +343,9 @@ if __name__ == '__main__':
 
   mail = imaplib.IMAP4_SSL(_imap_server_)
 
+  timer = TimerThread(mail)
+  timer.start()
+
   try:
     mail.login(_imap_user_, _imap_passwd_)
     mail.select('INBOX')
@@ -329,7 +357,7 @@ if __name__ == '__main__':
     #today = datetime.date.today().strftime("%d-%b-%Y")
     #for each address in _alert_address_:
     #  try:
-    #    status, data = conn.search(None, 'UNSEEN', 'FROM', address, 'ON', today)
+    #    status, data = conn.uid('search', None, 'UNSEEN', 'FROM', address, 'ON', today)
     #  except:
     #    continue
     #  if status == 'OK':
@@ -337,13 +365,18 @@ if __name__ == '__main__':
     #      uid_list = data[0]
     #      for uid in uid_list.split():
     #        try:
-    #          status, data = mail.fetch(uid, '(BODY.PEEK[HEADER])')
+    #          status, data = mail.uid('fetch', uid, '(BODY.PEEK[HEADER])')
     #        except:
     #          log('Failed to fetch mail data.', level='ERROR')
     #          continue
-    #        message = email.message_from_string(data[0][1])
-    #        if msg_is_alert(message):
-    #          mail.store(uid,'+FLAGS','\\Seen')
+    #        if status == 'OK':
+    #          message = email.message_from_string(data[0][1])
+    #          if msg_is_alert(message):
+    #            mail.uid('store', uid,'+FLAGS','\\Seen')
+    #        else:
+    #          log('Fetch mail returned a status <> OK.', level='DEBUG')
+    #  else:
+    #    log('Search mail returned a status <> OK.', level='DEBUG')
 
     log('Waiting for new mail ...')
 
@@ -351,24 +384,48 @@ if __name__ == '__main__':
     while loop:
 
       try:
-        for uid, msg in mail.idle():
+        prev_msg = None
+        for num, msg in mail.idle():
 
-          if msg == "EXISTS":
+          if msg == 'EXISTS' and prev_msg != 'EXPUNGE':
             log('New mail received.')
             mail.done()
 
             try:
-              status, data = mail.fetch(uid, '(BODY.PEEK[HEADER])')
+              status, data = mail.fetch(num, 'UID')
+
+              if status != 'OK':
+                continue
+
+              msg_uid = None
+              for item in data:
+                resp = [i.strip('()') for i in item.split()]
+                if resp[0] == num and resp[1] == 'UID':
+                  msg_uid = resp[2]
+                  log('Sequence number: {}, Unique ID: {}.'.format(num, msg_uid), level='DEBUG')
+                  break
+
+              if not msg_uid:
+                continue
+
+              #status, data = mail.fetch(num, '(BODY.PEEK[HEADER])')
+              status, data = mail.uid('fetch', msg_uid, '(BODY.PEEK[HEADER])')
 
             except:
               log('Failed to fetch mail data.', level='ERROR')
               continue
 
-            message = email.message_from_string(data[0][1])
-            if msg_is_alert(message):
-              mail.store(uid,'+FLAGS','\\Seen')
-              #mail.store(uid,'+FLAGS','(\\Deleted)')
-              #mail.expunge()
+            if status == 'OK':
+              message = email.message_from_string(data[0][1])
+              if msg_is_alert(message):
+                #mail.store(num, '+FLAGS', '(\\Seen)')
+                mail.uid('store', msg_uid, '+FLAGS', '(\\Seen)')
+                #mail.store(num, '+FLAGS', '(\\Deleted)')
+                #mail.expunge()
+            else:
+              log('Fetch mail returned a status <> OK.', level='DEBUG')
+
+          prev_msg = msg
 
       except (KeyboardInterrupt, SystemExit, GracefulExit):
         loop = False
@@ -381,6 +438,7 @@ if __name__ == '__main__':
         break
 
   finally:
+    timer.stop()
     try:
       mail.close()
     except:
