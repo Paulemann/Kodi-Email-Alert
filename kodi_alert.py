@@ -6,6 +6,7 @@ import email
 import time
 import datetime
 import requests
+import json
 import HTMLParser
 
 import logging
@@ -195,14 +196,14 @@ def done(connection):
 def kodi_request(method, params):
   url  = 'http://{}:{}/jsonrpc'.format(_kodi_, _kodi_port_)
   headers = {'content-type': 'application/json'}
-  data = '{{"jsonrpc":"2.0","method":"{}","params":{},"id":1}}'.format(method, params)
+  data = {'jsonrpc': '2.0', 'method': method, 'params': params,'id': 1}
 
   if _kodi_user_ and _kodi_passwd_:
     base64str = base64.encodestring('{}:{}'.format(_kodi_user_, _kodi_passwd_))[:-1]
     header['Authorization'] = 'Basic {}'.format(base64str)
 
   try:
-    response = requests.post(url, data=data, headers=headers, timeout=10)
+    response = requests.post(url, data=json.dumps(data), headers=headers, timeout=10)
   except:
     return False
 
@@ -228,10 +229,10 @@ def alert(title, message):
 
   if title and message:
     log('Sending notification \'{}: {}\' ...'.format(title, message))
-    kodi_request('GUI.ShowNotification', '{{"title":"{}","message":"{}", "displaytime":2000}}'.format(title, message))
+    kodi_request('GUI.ShowNotification', {'title': title, 'message': message, 'displaytime': 2000})
 
   log('Requsting execution of addon \'{}\' ...'.format(_addon_id_))
-  kodi_request('Addons.ExecuteAddon', '{{"addonid":"{}"}}'.format(_addon_id_))
+  kodi_request('Addons.ExecuteAddon', {'addonid': _addon_id_})
 
 
 def msg_is_alert(message):
@@ -280,13 +281,13 @@ def msg_is_alert(message):
       _notify_text_ = subject
 
     log('Mail has matching criteria: From Address={}.'.format(from_address))
-    alert(_notify_title_, _notify_text_)
     if _exec_local_:
       try:
         os.system(_exec_local_)
       except:
         log('Could not execute local command \'{}\'.'.format(_exec_local_) , level='ERROR')
         pass
+    alert(_notify_title_, _notify_text_)
 
     return True
 
