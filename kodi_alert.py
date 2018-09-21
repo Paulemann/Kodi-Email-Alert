@@ -121,10 +121,11 @@ def read_config():
 
     _alert_address_  = [p.strip().replace('"', '').replace('\'', '') for p in config.get('Alert Trigger', 'mailaddress').split(',')]
 
-    for address in _alert_address_:
-      if not is_mailaddress(address):
-        log('Wrong or missing value(s) in configuration file (section [Alert Trigger]).')
-        return False
+    if not _alert_address_ == '{any}':
+      for address in _alert_address_:
+        if not is_mailaddress(address):
+          log('Wrong or missing value(s) in configuration file (section [Alert Trigger]).')
+          return False
 
     _notify_title_  = config.get('Alert Notification', 'title')
     _notify_text_   = config.get('Alert Notification', 'text')
@@ -231,8 +232,9 @@ def alert(title, message):
     log('Sending notification \'{}: {}\' ...'.format(title, message))
     kodi_request('GUI.ShowNotification', {'title': title, 'message': message, 'displaytime': 2000})
 
-  log('Requsting execution of addon \'{}\' ...'.format(_addon_id_))
-  kodi_request('Addons.ExecuteAddon', {'addonid': _addon_id_})
+  if _addon_id_:
+    log('Requsting execution of addon \'{}\' ...'.format(_addon_id_))
+    kodi_request('Addons.ExecuteAddon', {'addonid': _addon_id_})
 
 
 def msg_is_alert(message):
@@ -271,7 +273,7 @@ def msg_is_alert(message):
     log('From:    {} <{}>'.format(from_name, from_address), level='DEBUG')
   log('Subject: {}'.format(subject), level='DEBUG')
 
-  if from_address in _alert_address_:
+  if from_address in _alert_address_ or from_address == '{any}':
     if _notify_title_ == '{from}':
       if from_name:
         _notify_title_ = from_name
