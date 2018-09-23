@@ -119,7 +119,7 @@ def read_config():
       log('Wrong or missing value(s) in configuration file (section [Mail Account]).')
       return False
 
-    _alert_address_  = [p.strip().replace('"', '').replace('\'', '') for p in config.get('Alert Trigger', 'mailaddress').split(',')]
+    _alert_address_  = [p.strip(' "\'') for p in config.get('Alert Trigger', 'mailaddress').split(',')]
 
     if not _alert_address_ == '{any}':
       for address in _alert_address_:
