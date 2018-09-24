@@ -10,6 +10,8 @@ The sender's email address is then compared to the configured email address of t
 
 Since, commonly, the idle connections is terminated after 30 mins of inactivity, which also makes the script exit, I recommend starting the script with a systemd unit file 'kodi_alert.service' which has 'restart on-success' configured. Thus, the script is automatically restarted after a 'graceful' exit due to termination of the idle loop and resumes its task.
 
+Update: I added a background process (thread) which forces termination of the idle loop every 15 minutes to prevent an inactivity timeout. This way, the kodi_alert.service 'restart on-success' option isn't required any more.
+
 The required parameters for the kodi JSON-RPC connection, email account, security cam email adress(es) and alert notifications must be confifured in the file 'kodi_alert.ini' in the same folder with 'kodi_alert.py'. See 'kodi_alert.ini.template' for what configuration values must be set.
 
 Since my kodi system goes into sleep mode when idle I am running the script on a rasperry pi which is up 24x7. There is no wake-on-lan on email receipt since the time it takes to fully wake up the host and tv would probably not allow capturing the actual motion on screen. 
