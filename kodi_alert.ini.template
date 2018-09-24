@@ -1,5 +1,5 @@
 [KODI JSON-RPC]
-hostname: <kodi ip address or hostname; required>
+hostname: <(list of comma separated) kodi ip address(es) or hostname(s); required>
 port: <kodi port; required>
 username: <kodi username; optional>
 password: <kodi password; optional>
@@ -10,11 +10,11 @@ username: <mail username/email; required
 password: <mail password; required>
 
 [Alert Trigger]
-mailaddress: <email address(es) of alarm sender(s), comma separated; required)
+mailaddress: <(list of comma separated) email address(es) of alarm sender(s) or '{any}' for non-specific address; required)
 
 [Alert Notification]
-title: <Notification title; optional>
+title: <Notification title or {from} to copy alarm sender's address; optional>
 text: <Notification text or {subject} to copy alarm sender's subject; optional>
 
 [Local]
-command: <Local script or command to be executed when alert mail has been received; optional>
+command: <Local script or command to be executed on receipt of alert mail; optional>
