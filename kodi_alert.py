@@ -85,7 +85,7 @@ def log(message, level='INFO'):
 
 
 def read_config():
-  global _kodi_, _kodi_port_, _kodi_user_, _kodi_passwd_
+  global _kodi_hosts_, _kodi_port_, _kodi_user_, _kodi_passwd_
   global _imap_server_, _imap_user_, _imap_passwd_
   global _alert_address_, _notify_title_, _notify_text_
   global _exec_local_
@@ -102,12 +102,17 @@ def read_config():
 
     config.read([os.path.abspath(_config_file_)])
 
-    _kodi_          = config.get('KODI JSON-RPC', 'hostname')
+    _kodi_hosts_    = [p.strip(' "\'') for p in config.get('KODI JSON-RPC', 'hostname').split(',')]
+   #_kodi_          = config.get('KODI JSON-RPC', 'hostname')
     _kodi_port_     = config.get('KODI JSON-RPC', 'port')
     _kodi_user_     = config.get('KODI JSON-RPC', 'username')
     _kodi_passwd_   = config.get('KODI JSON-RPC', 'password')
 
-    if not  is_hostname(_kodi_) or not is_int(_kodi_port_):
+    for host in _kodi_hosts_:
+      if not is_hostname(host):
+        log('Wrong or missing value(s) in configuration file (section: [KODI JSON-RPC]).')
+        return False
+    if not is_int(_kodi_port_):
       log('Wrong or missing value(s) in configuration file (section: [KODI JSON-RPC]).')
       return False
 
@@ -194,8 +199,8 @@ def done(connection):
   connection.loop = False
 
 
-def kodi_request(method, params):
-  url  = 'http://{}:{}/jsonrpc'.format(_kodi_, _kodi_port_)
+def kodi_request(host, method, params):
+  url  = 'http://{}:{}/jsonrpc'.format(host, _kodi_port_)
   headers = {'content-type': 'application/json'}
   data = {'jsonrpc': '2.0', 'method': method, 'params': params,'id': 1}
 
@@ -223,18 +228,19 @@ def host_is_up(host, port):
   return True
 
 
-def alert(title, message):
-  if not host_is_up(_kodi_, _kodi_port_):
-    log('Host {} is down. Requests canceled.'.format(_kodi_))
-    return
+def alert():
+  for host in _kodi_hosts_:
+    if not host_is_up(host, _kodi_port_):
+      log('Host {} is down. Requests canceled.'.format(host))
+      return
 
-  if title and message:
-    log('Sending notification \'{}: {}\' ...'.format(title, message))
-    kodi_request('GUI.ShowNotification', {'title': title, 'message': message, 'displaytime': 2000})
+    if _notify_title_ and _notify_text_:
+      log('Requesting notification \'{}: {}\' on host {} ...'.format(_notify_title_, _notify_text_, host))
+      kodi_request(host, 'GUI.ShowNotification', {'title': _notify_title_, 'message': _notify_text_, 'displaytime': 2000})
 
-  if _addon_id_:
-    log('Requsting execution of addon \'{}\' ...'.format(_addon_id_))
-    kodi_request('Addons.ExecuteAddon', {'addonid': _addon_id_})
+    if _addon_id_:
+      log('Requesting execution of addon \'{}\' on host {} ...'.format(_addon_id_, host))
+      kodi_request(host, 'Addons.ExecuteAddon', {'addonid': _addon_id_})
 
 
 def msg_is_alert(message):
@@ -289,7 +295,7 @@ def msg_is_alert(message):
       except:
         log('Could not execute local command \'{}\'.'.format(_exec_local_) , level='ERROR')
         pass
-    alert(_notify_title_, _notify_text_)
+    alert()
 
     return True
 
