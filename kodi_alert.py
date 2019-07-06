@@ -168,18 +168,19 @@ def idle(connection):
   tag = connection._new_tag()
   connection.send("%s IDLE\r\n" % tag)
   response = connection.readline()
-  log('IDLE readline(), Response: \'{}\''.format(response.replace('\r\n', '')), level='DEBUG')
-  if response != '+ idling\r\n':
+  log('IDLE Response (start): \'{}\''.format(response.replace('\r\n', '')), level='DEBUG')
+  if not response.startswith('+'):
     raise Exception("IDLE not handled? Response: \'%s\'" % response)
   connection.loop = True
   while connection.loop:
     try:
-      resp = connection._get_response()
-      log('IDLE _get_response_(), Response: \'{}\''.format(resp.replace('\r\n', '')), level='DEBUG')
-      #num, message = resp.split()[1:]
-      num, message = resp.split()[1:3]
-      if message == 'EXISTS' or message == 'EXPUNGE':
-        log('IDLE sequence number: {}, message: {}'.format(num, message), level='DEBUG')
+      #response = connection._get_response()
+      response = connection.readline().strip()
+      log('IDLE Response (loop): \'{}\''.format(response.replace('\r\n', '')), level='DEBUG')
+      if not response or response.startswith('* BYE '):
+        connection.done()
+      elif response.endswith('EXISTS') or response.endswith('EXPUNGE'):
+        num, message = response.split()[1:3]
         yield num, message
     except connection.abort:
       #log('IDLE connection.abort, Last Response: {}'.format(resp), level='DEBUG') # --> raise exception
@@ -357,7 +358,12 @@ if __name__ == '__main__':
 
   try:
     mail.login(_imap_user_, _imap_passwd_)
-    mail.select('INBOX')
+    status, data = mail.select('INBOX')
+    if status == 'OK':
+      total_msgs = int(data[0])
+      log('There are {} messages in INBOX'.format(total_msgs), level='DEBUG')
+    else:
+      raise Exception('Mailbox \'INBOX\' does not exist')
 
     #
     # Currently, this init block is not required.
@@ -366,7 +372,7 @@ if __name__ == '__main__':
     #today = datetime.date.today().strftime("%d-%b-%Y")
     #for each address in _alert_address_:
     #  try:
-    #    status, data = conn.uid('search', None, 'UNSEEN', 'FROM', address, 'ON', today)
+    #    status, data = mail.uid('search', None, 'UNSEEN', 'FROM', address, 'ON', today)
     #  except:
     #    continue
     #  if status == 'OK':
@@ -393,12 +399,12 @@ if __name__ == '__main__':
     while loop:
 
       try:
-        prev_msg = None
         for num, msg in mail.idle():
 
-          if msg == 'EXISTS' and prev_msg != 'EXPUNGE':
+          if msg == 'EXISTS' and int(num) > total_msgs:
             log('New mail received.')
             mail.done()
+            total_msgs = int(num)
 
             try:
               status, data = mail.fetch(num, 'UID')
@@ -434,7 +440,12 @@ if __name__ == '__main__':
             else:
               log('Fetch mail returned a status <> OK.', level='DEBUG')
 
-          prev_msg = msg
+          #elif msg == 'EXISTS':
+          #  total_msgs = int(num)
+
+          elif msg == 'EXPUNGE':
+            total_msgs -= 1
+            log('Mail deleted. Remaining {} messages in INBOX'.format(total_msgs), level='DEBUG')
 
       except (KeyboardInterrupt, SystemExit, GracefulExit):
         loop = False
@@ -445,6 +456,10 @@ if __name__ == '__main__':
         loop = False
         log('Abort due to exception: \"{}\"'.format(e))
         break
+
+  except Exception as e:
+    log('An error occured: {}'.format(e))
+    pass
 
   finally:
     timer.stop()
